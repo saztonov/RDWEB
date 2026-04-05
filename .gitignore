@@ -18,8 +18,8 @@ apps/web/dist/
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # IDE
 .idea/
@@ -36,6 +36,23 @@ docker-compose.override.yml
 
 # Supabase local
 supabase/.temp/
+
+# Secrets & certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.cert
+secrets/
+credentials/
+
+# Logs
+*.log
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
 
 # Legacy project (reference only)
 legacy_project/
