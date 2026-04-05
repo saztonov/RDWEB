@@ -1,11 +1,14 @@
-"""Admin endpoints — health и events. Доступны только global admin."""
+"""Admin endpoints — health, events, manual healthcheck. Доступны только global admin."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from contracts import (
     AdminHealthResponse,
+    HealthCheckResponse,
     PaginatedMeta,
     ServiceHealthResponse,
     SystemEventListResponse,
@@ -107,4 +110,31 @@ def admin_events(
     return SystemEventListResponse(
         events=events,
         meta=PaginatedMeta(total=total, limit=limit, offset=offset),
+    )
+
+
+@router.post("/ocr/sources/{source_id}/healthcheck", response_model=HealthCheckResponse)
+async def trigger_healthcheck(
+    source_id: str,
+    request: Request,
+    user: CurrentUser = Depends(require_admin),
+) -> HealthCheckResponse:
+    """Ручной healthcheck OCR source-а. Только для admin."""
+    from ..services.source_registry import SourceRegistry
+
+    registry: SourceRegistry = request.app.state.source_registry
+
+    if not registry.has_source(source_id):
+        raise HTTPException(status_code=404, detail="OCR source не найден или отключён")
+
+    result = await registry.run_healthcheck(source_id)
+    config = registry.get_config(source_id)
+
+    return HealthCheckResponse(
+        source_id=source_id,
+        source_name=config.name,
+        health_status=result.status.value,
+        response_time_ms=result.response_time_ms,
+        details=result.details,
+        checked_at=datetime.now(timezone.utc),
     )

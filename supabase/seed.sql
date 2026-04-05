@@ -38,7 +38,7 @@ ON CONFLICT DO NOTHING;
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- OpenRouter — managed API
-INSERT INTO ocr_sources (id, source_type, name, base_url, deployment_mode, is_enabled, concurrency_limit, timeout_sec, health_status)
+INSERT INTO ocr_sources (id, source_type, name, base_url, deployment_mode, is_enabled, concurrency_limit, timeout_sec, health_status, credentials_json)
 VALUES (
     '00000000-0000-0000-0000-000000000100',
     'openrouter',
@@ -48,12 +48,13 @@ VALUES (
     true,
     8,
     120,
-    'unknown'
+    'unknown',
+    '{"api_key": "sk-placeholder"}'::jsonb
 )
 ON CONFLICT DO NOTHING;
 
 -- LM Studio — локальный docker
-INSERT INTO ocr_sources (id, source_type, name, base_url, deployment_mode, is_enabled, concurrency_limit, timeout_sec, health_status)
+INSERT INTO ocr_sources (id, source_type, name, base_url, deployment_mode, is_enabled, concurrency_limit, timeout_sec, health_status, credentials_json)
 VALUES (
     '00000000-0000-0000-0000-000000000101',
     'lmstudio',
@@ -63,12 +64,13 @@ VALUES (
     true,
     2,
     180,
-    'unknown'
+    'unknown',
+    '{}'::jsonb
 )
 ON CONFLICT DO NOTHING;
 
 -- LM Studio — ngrok tunnel
-INSERT INTO ocr_sources (id, source_type, name, base_url, deployment_mode, is_enabled, concurrency_limit, timeout_sec, health_status)
+INSERT INTO ocr_sources (id, source_type, name, base_url, deployment_mode, is_enabled, concurrency_limit, timeout_sec, health_status, credentials_json)
 VALUES (
     '00000000-0000-0000-0000-000000000102',
     'lmstudio',
@@ -78,7 +80,8 @@ VALUES (
     false,
     2,
     240,
-    'unknown'
+    'unknown',
+    '{"auth_user": "user", "auth_pass": "pass"}'::jsonb
 )
 ON CONFLICT DO NOTHING;
 
@@ -157,7 +160,7 @@ VALUES (
     'Распознай содержимое штампа/печати на изображении. '
     'Верни структурированный текст штампа, сохраняя иерархию полей.',
     '{"type": "object", "properties": {"organization": {"type": "string"}, "title": {"type": "string"}, "person": {"type": "string"}, "date": {"type": "string"}, "license": {"type": "string"}, "raw_text": {"type": "string"}}}'::jsonb,
-    'json_schema',
+    'stamp_json',
     'Промпт для штампов/печатей через OpenRouter с JSON-выводом'
 )
 ON CONFLICT (template_key, version) DO NOTHING;
@@ -207,7 +210,7 @@ VALUES (
     'есть ли текстовые подписи или размерные линии. Будь точен и лаконичен.',
     'Опиши содержимое графического блока на чертеже. '
     'Укажи тип изображения (схема, чертёж, фото, диаграмма) и ключевые элементы.',
-    'markdown',
+    'image_json',
     'Промпт для графических блоков через OpenRouter'
 )
 ON CONFLICT (template_key, version) DO NOTHING;

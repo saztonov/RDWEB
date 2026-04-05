@@ -50,7 +50,11 @@ export interface Block {
   routeModelName: string | null
   promptTemplateId: string | null
   currentText: string | null
+  currentStructuredJson: Record<string, unknown> | null
+  currentRenderHtml: string | null
+  currentAttemptId: string | null
   currentStatus: BlockStatus
+  lastRecognitionSignature: string | null
   deletedAt: string | null
   createdAt: string
   updatedAt: string
@@ -73,6 +77,96 @@ export interface UpdateBlockPayload {
   routeSourceId?: string | null
   routeModelName?: string | null
   promptTemplateId?: string | null
+}
+
+/** Payload для ручной правки текста блока */
+export interface ManualEditPayload {
+  currentText?: string
+  currentStructuredJson?: Record<string, unknown>
+}
+
+/** Payload для принятия candidate attempt */
+export interface AcceptAttemptPayload {
+  attemptId: string
+}
+
+/** Попытка распознавания блока (recognition_attempts row) */
+export interface RecognitionAttempt {
+  id: string
+  runId: string | null
+  blockId: string
+  geometryRev: number | null
+  sourceId: string | null
+  modelName: string | null
+  promptTemplateId: string | null
+  attemptNo: number | null
+  fallbackNo: number
+  status: string
+  normalizedText: string | null
+  structuredJson: Record<string, unknown> | null
+  renderHtml: string | null
+  qualityFlagsJson: Record<string, unknown> | null
+  errorCode: string | null
+  errorMessage: string | null
+  selectedAsCurrent: boolean
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string
+}
+
+/** Сводка dirty-блоков для smart rerun */
+export interface DirtySummary {
+  total: number
+  dirtyCount: number
+  lockedCount: number
+  dirtyBlockIds: string[]
+}
+
+/** Recognition run */
+export interface RecognitionRun {
+  id: string
+  documentId: string
+  initiatedBy: string | null
+  runMode: 'smart' | 'full' | 'block_rerun'
+  status: string
+  totalBlocks: number
+  dirtyBlocks: number
+  processedBlocks: number
+  recognizedBlocks: number
+  failedBlocks: number
+  manualReviewBlocks: number
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string
+}
+
+/** Provenance текущего attempt (из /blocks/{id}/detail) */
+export interface AttemptProvenance {
+  id: string
+  sourceId: string | null
+  sourceName?: string
+  modelName: string | null
+  promptTemplateId: string | null
+  promptKey?: string
+  promptVersion?: number
+  attemptNo: number | null
+  fallbackNo: number
+  status: string
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+/** Полная деталь блока (из /blocks/{id}/detail) */
+export interface BlockDetail {
+  block: Block
+  currentAttempt: AttemptProvenance | null
+  attemptsCount: number
+  pendingCandidate: {
+    id: string
+    normalizedText: string | null
+    modelName: string | null
+    createdAt: string
+  } | null
 }
 
 /** Цвета блоков по типу (из legacy page_viewer_blocks.py) */

@@ -1,9 +1,10 @@
-"""Block endpoints — CRUD + restore для блоков документа.
+"""Block endpoints — CRUD + restore + content edit + lock + rerun + attempts.
 
 Правила обновления:
 - изменение bbox_json/polygon_json → geometry_rev + 1
 - изменение route_source_id/route_model_name/prompt_template_id → dirty (обнуление last_recognition_signature)
-- manual text editing — не в этом этапе
+- ручная правка current_text → content_rev + 1, manual_lock = true
+- explicit rerun на locked block → attempt без auto-apply
 """
 
 from __future__ import annotations
@@ -15,9 +16,26 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from contracts import (
+    AcceptAttemptRequest,
+    BlockPromptOverrideRequest,
+    ManualEditRequest,
+    RerunBlockRequest,
+    ToggleLockRequest,
+)
+
 from ..auth import CurrentUser, get_current_user, get_supabase
+from ..auth.dependencies import require_admin
 from ..logging_config import get_logger
 from ..permissions.checks import require_document_access
+from ..services.recognition_service import (
+    accept_attempt,
+    apply_manual_edit,
+    get_block_attempts,
+    get_block_detail,
+    start_recognition_run,
+    toggle_lock,
+)
 
 _logger = get_logger(__name__)
 
@@ -73,7 +91,11 @@ def _serialize_block(row: dict) -> dict:
         "route_model_name": row.get("route_model_name"),
         "prompt_template_id": row.get("prompt_template_id"),
         "current_text": row.get("current_text"),
+        "current_structured_json": row.get("current_structured_json"),
+        "current_render_html": row.get("current_render_html"),
+        "current_attempt_id": row.get("current_attempt_id"),
         "current_status": row["current_status"],
+        "last_recognition_signature": row.get("last_recognition_signature"),
         "deleted_at": row.get("deleted_at"),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -350,3 +372,232 @@ def restore_block(
     _logger.info("Block restored", extra={"event": "block_restored", "block_id": block_id, "user_id": user.id})
 
     return _serialize_block(result.data[0])
+
+
+# ──────────────────────────────────────────────────────────────────────
+# PATCH /api/blocks/{block_id}/prompt-override
+# ──────────────────────────────────────────────────────────────────────
+
+@router.patch("/blocks/{block_id}/prompt-override")
+def set_prompt_override(
+    block_id: str,
+    body: BlockPromptOverrideRequest,
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
+    """Установить или удалить block-level prompt template override."""
+    sb = get_supabase()
+
+    # Если задан template_id — проверить что он существует и активен
+    if body.prompt_template_id:
+        pt_result = (
+            sb.table("prompt_templates")
+            .select("id")
+            .eq("id", body.prompt_template_id)
+            .eq("is_active", True)
+            .execute()
+        )
+        if not pt_result.data:
+            raise HTTPException(status_code=400, detail="Prompt template не найден или не активен")
+
+    # Обновить block
+    result = (
+        sb.table("blocks")
+        .update({
+            "prompt_template_id": body.prompt_template_id,
+            "updated_by": user.id,
+        })
+        .eq("id", block_id)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+
+    # Записать event
+    sb.table("block_events").insert({
+        "block_id": block_id,
+        "event_type": "prompt_override_changed",
+        "payload_json": {"prompt_template_id": body.prompt_template_id},
+        "actor_id": user.id,
+    }).execute()
+
+    return {"ok": True, "block_id": block_id, "prompt_template_id": body.prompt_template_id}
+
+
+# ──────────────────────────────────────────────────────────────────────
+# PATCH /api/blocks/{block_id}/content — ручная правка текста
+# ──────────────────────────────────────────────────────────────────────
+
+@router.patch("/blocks/{block_id}/content")
+def edit_block_content(
+    block_id: str,
+    body: ManualEditRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Ручная правка current_text / current_structured_json.
+
+    Правила:
+    - content_rev += 1
+    - manual_lock = true
+    - current_status = 'recognized'
+    """
+    sb = get_supabase()
+
+    # Проверка доступа
+    block_result = sb.table("blocks").select("document_id").eq("id", block_id).is_("deleted_at", "null").maybe_single().execute()
+    if not block_result.data:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    require_document_access(block_result.data["document_id"], user)
+
+    if body.current_text is None and body.current_structured_json is None:
+        raise HTTPException(status_code=400, detail="Необходимо указать current_text или current_structured_json")
+
+    try:
+        updated = apply_manual_edit(
+            block_id, user.id,
+            body.current_text, body.current_structured_json,
+            sb,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return _serialize_block(updated)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# PATCH /api/blocks/{block_id}/lock — переключение manual_lock
+# ──────────────────────────────────────────────────────────────────────
+
+@router.patch("/blocks/{block_id}/lock")
+def toggle_block_lock(
+    block_id: str,
+    body: ToggleLockRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Включить/выключить manual_lock на блоке."""
+    sb = get_supabase()
+
+    block_result = sb.table("blocks").select("document_id").eq("id", block_id).is_("deleted_at", "null").maybe_single().execute()
+    if not block_result.data:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    require_document_access(block_result.data["document_id"], user)
+
+    try:
+        updated = toggle_lock(block_id, body.manual_lock, user.id, sb)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return _serialize_block(updated)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# POST /api/blocks/{block_id}/rerun — перезапуск одного блока
+# ──────────────────────────────────────────────────────────────────────
+
+@router.post("/blocks/{block_id}/rerun")
+def rerun_block(
+    block_id: str,
+    body: RerunBlockRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Перезапуск распознавания одного блока.
+
+    Если блок locked и force=false — rerun создаётся, но результат
+    не будет auto-apply (останется как candidate).
+    """
+    sb = get_supabase()
+
+    block_result = sb.table("blocks").select("document_id").eq("id", block_id).is_("deleted_at", "null").maybe_single().execute()
+    if not block_result.data:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    require_document_access(block_result.data["document_id"], user)
+
+    try:
+        result = start_recognition_run(
+            document_id=block_result.data["document_id"],
+            run_mode="block_rerun",
+            user_id=user.id,
+            sb=sb,
+            block_ids=[block_id],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "ok": True,
+        "run_id": result["run"]["id"],
+        "target_block_ids": result["target_block_ids"],
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# GET /api/blocks/{block_id}/attempts — список recognition attempts
+# ──────────────────────────────────────────────────────────────────────
+
+@router.get("/blocks/{block_id}/attempts")
+def list_block_attempts(
+    block_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Список recognition_attempts блока, от новых к старым."""
+    sb = get_supabase()
+
+    block_result = sb.table("blocks").select("document_id").eq("id", block_id).is_("deleted_at", "null").maybe_single().execute()
+    if not block_result.data:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    require_document_access(block_result.data["document_id"], user)
+
+    attempts = get_block_attempts(block_id, sb)
+    return {"attempts": attempts}
+
+
+# ──────────────────────────────────────────────────────────────────────
+# POST /api/blocks/{block_id}/accept-attempt — принять candidate
+# ──────────────────────────────────────────────────────────────────────
+
+@router.post("/blocks/{block_id}/accept-attempt")
+def accept_block_attempt(
+    block_id: str,
+    body: AcceptAttemptRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Принять candidate attempt как текущий результат блока."""
+    sb = get_supabase()
+
+    block_result = sb.table("blocks").select("document_id").eq("id", block_id).is_("deleted_at", "null").maybe_single().execute()
+    if not block_result.data:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    require_document_access(block_result.data["document_id"], user)
+
+    try:
+        updated = accept_attempt(block_id, body.attempt_id, user.id, sb)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return _serialize_block(updated)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# GET /api/blocks/{block_id}/detail — полная информация + provenance
+# ──────────────────────────────────────────────────────────────────────
+
+@router.get("/blocks/{block_id}/detail")
+def block_detail(
+    block_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Полная информация о блоке: current state + provenance + candidate."""
+    sb = get_supabase()
+
+    block_result = sb.table("blocks").select("document_id").eq("id", block_id).is_("deleted_at", "null").maybe_single().execute()
+    if not block_result.data:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    require_document_access(block_result.data["document_id"], user)
+
+    try:
+        detail = get_block_detail(block_id, sb)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    detail["block"] = _serialize_block(detail["block"])
+    return detail

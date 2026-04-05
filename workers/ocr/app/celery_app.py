@@ -55,5 +55,16 @@ celery_app.conf.update(
     task_default_priority=settings.default_task_priority,
     task_queue_max_priority=10,
     # Авто-импорт задач
-    imports=["app.tasks"],
+    imports=["app.tasks", "app.jobs.model_sync", "app.jobs.health_probe"],
+    # Beat schedule — периодические задачи
+    beat_schedule={
+        "sync-source-models": {
+            "task": "ocr.sync_source_models",
+            "schedule": 300.0,  # каждые 5 минут
+        },
+        "probe-source-health": {
+            "task": "ocr.probe_source_health",
+            "schedule": 60.0,  # каждую минуту
+        },
+    },
 )

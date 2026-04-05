@@ -41,6 +41,25 @@ class WorkerSettings(BaseSettings):
     datalab_api_key: str = ""
     chandra_base_url: str = ""
 
+    # Local workspace для OCR pipeline
+    workspace_base_dir: str = "/var/lib/ocr/workspaces"
+    pdf_cache_dir: str = "/var/lib/ocr/pdf_cache"
+    pdf_cache_ttl: int = 3600
+
+    # OCR retry policy
+    max_retries_same_model: int = 2
+    circuit_breaker_threshold: int = 3
+    circuit_breaker_recovery: float = 60.0
+
+    # Crop upload в R2
+    crop_upload_max_retries: int = 3
+    crop_upload_retry_delay: int = 5
+
+    # Rendering
+    max_image_pixels: int = 500_000_000
+    default_dpi: int = 200
+    crop_padding: int = 5
+
 
 @lru_cache
 def get_worker_settings() -> WorkerSettings:

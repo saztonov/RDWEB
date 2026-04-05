@@ -23,6 +23,7 @@ from .logging_config import get_logger, setup_logging
 from .middleware import RequestTimingMiddleware
 from .routes import api_router
 from .services.r2_client import R2Client
+from .services.source_registry import SourceRegistry
 
 setup_logging()
 _logger = get_logger(__name__)
@@ -64,9 +65,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         },
     )
 
-    # TODO: Фоновые задачи (zombie detector, model unloader) — Phase 3
+    # Инициализация SourceRegistry — реестр OCR провайдеров
+    registry = SourceRegistry()
+    try:
+        await registry.load_from_db()
+    except Exception:
+        _logger.warning("SourceRegistry: не удалось загрузить source-ы при старте", exc_info=True)
+    app.state.source_registry = registry
 
     yield
+
+    # Cleanup: закрываем провайдеры
+    if hasattr(app.state, "source_registry"):
+        await app.state.source_registry.close_all()
 
     # Cleanup: очистка expired PDF кешей
     if app.state.pdf_cache:
