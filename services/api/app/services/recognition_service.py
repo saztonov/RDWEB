@@ -465,6 +465,11 @@ def start_recognition_run(
                 "current_status": "queued",
             }).eq("id", bid).is_("deleted_at", "null").execute()
 
+    # Группировка блоков по page_number и dispatch page tasks
+    if target_block_ids:
+        page_blocks = _group_by_page(target_block_ids, sb)
+        _dispatch_page_tasks(run["id"], document_id, page_blocks)
+
     _logger.info(
         "Recognition run created",
         extra={
@@ -473,6 +478,7 @@ def start_recognition_run(
             "document_id": document_id,
             "run_mode": run_mode,
             "target_blocks": len(target_block_ids),
+            "page_groups": len(page_blocks) if target_block_ids else 0,
             "user_id": user_id,
         },
     )
@@ -481,6 +487,50 @@ def start_recognition_run(
         "run": run,
         "target_block_ids": target_block_ids,
     }
+
+
+def _group_by_page(block_ids: list[str], sb) -> dict[int, list[str]]:
+    """Сгруппировать block_ids по page_number."""
+    if not block_ids:
+        return {}
+
+    result = (
+        sb.table("blocks")
+        .select("id, page_number")
+        .in_("id", block_ids)
+        .execute()
+    )
+    page_blocks: dict[int, list[str]] = {}
+    for row in result.data or []:
+        page = row["page_number"]
+        page_blocks.setdefault(page, []).append(row["id"])
+    return page_blocks
+
+
+def _dispatch_page_tasks(
+    run_id: str,
+    document_id: str,
+    page_blocks: dict[int, list[str]],
+) -> None:
+    """Отправить Celery task для каждой страницы."""
+    from ..celery_client import get_celery_app
+    app = get_celery_app()
+
+    for page_number, block_ids in sorted(page_blocks.items()):
+        app.send_task(
+            "ocr.process_page_blocks",
+            args=[run_id, document_id, page_number, block_ids],
+            priority=5,
+        )
+        _logger.info(
+            "Page task dispatched",
+            extra={
+                "event": "page_task_dispatched",
+                "run_id": run_id,
+                "page_number": page_number,
+                "blocks": len(block_ids),
+            },
+        )
 
 
 def get_block_attempts(block_id: str, sb) -> list[dict]:
