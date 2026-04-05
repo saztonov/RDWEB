@@ -39,7 +39,7 @@ import { useEditorStore } from '../../store/useEditorStore'
 import type { RecognitionAttempt } from '../../types/block'
 import { BlockKind, BLOCK_COLORS } from '../../types/block'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 const { TextArea } = Input
 
 /** Цвет статус-тега */

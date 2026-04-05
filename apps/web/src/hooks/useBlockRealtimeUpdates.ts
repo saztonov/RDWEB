@@ -9,29 +9,15 @@
  * - Row-level фильтрация по document_id из коробки
  * - RLS уже настроен для workspace isolation
  * - Не требует дополнительной инфраструктуры (Redis pub/sub)
+ *
+ * Использует общий singleton Supabase client из lib/supabase.ts
+ * с автоматическим refresh токена через onAuthStateChange.
  */
 
 import { useEffect, useRef } from 'react'
-import { createClient } from '@supabase/supabase-js'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
 import { useEditorStore } from '../store/useEditorStore'
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
-
-// Singleton Supabase client для Realtime
-let _supabaseClient: ReturnType<typeof createClient> | null = null
-
-function getSupabaseClient() {
-  if (!_supabaseClient && SUPABASE_URL && SUPABASE_ANON_KEY) {
-    _supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      realtime: {
-        params: { eventsPerSecond: 10 },
-      },
-    })
-  }
-  return _supabaseClient
-}
 
 /**
  * Подписка на Supabase Realtime для live обновлений блоков документа.
@@ -53,22 +39,6 @@ export function useBlockRealtimeUpdates(documentId: string | null) {
   // Подписка на blocks
   useEffect(() => {
     if (!documentId) return
-
-    const supabase = getSupabaseClient()
-    if (!supabase) return
-
-    // Устанавливаем auth token для RLS
-    const raw = localStorage.getItem('sb-auth-token')
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw)
-        if (parsed.access_token) {
-          supabase.realtime.setAuth(parsed.access_token)
-        }
-      } catch {
-        // ignore
-      }
-    }
 
     const channel = supabase
       .channel(`blocks:${documentId}`)
@@ -130,15 +100,11 @@ export function useBlockRealtimeUpdates(documentId: string | null) {
   useEffect(() => {
     if (!activeRunId) {
       if (runChannelRef.current) {
-        const supabase = getSupabaseClient()
-        if (supabase) supabase.removeChannel(runChannelRef.current)
+        supabase.removeChannel(runChannelRef.current)
         runChannelRef.current = null
       }
       return
     }
-
-    const supabase = getSupabaseClient()
-    if (!supabase) return
 
     const channel = supabase
       .channel(`run:${activeRunId}`)

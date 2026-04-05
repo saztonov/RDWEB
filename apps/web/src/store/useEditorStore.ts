@@ -11,7 +11,7 @@ import { subscribeWithSelector } from 'zustand/middleware'
 
 import * as blocksApi from '../api/blocksApi'
 import * as recognitionApi from '../api/recognitionApi'
-import { getDocument } from '../api/documentsApi'
+import { getDocument, getDownloadUrl } from '../api/documentsApi'
 import type {
   Block,
   BlockCoords,
@@ -244,6 +244,16 @@ export const useEditorStore = create<EditorStore>()(
           currentPage: 1,
           documentLoading: false,
         })
+
+        // Запросить presigned download URL для PDF из R2
+        if (doc.status === 'ready' || doc.status === 'processing') {
+          try {
+            const url = await getDownloadUrl(id)
+            set({ pdfUrl: url })
+          } catch {
+            // PDF может быть ещё не загружен — не блокируем работу
+          }
+        }
       } catch (err) {
         set({
           documentLoading: false,

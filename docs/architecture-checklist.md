@@ -91,14 +91,14 @@
 |-----------|--------|--------|
 | Vite + React 18 + TS | Готово | Ant Design UI kit |
 | API client | Готово | apiFetch() с JWT injection |
-| Auth flow | Готово | Login, Supabase JWT, localStorage |
-| Dashboard | Готово | Document list |
+| Auth flow | Готово | Login (Supabase signInWithPassword), ProtectedRoute, Logout, JWT в localStorage |
+| Dashboard | Готово | Статистика workspace, последние документы, health overview |
 | Document editor | Готово | Split view: PDF canvas + inspector |
 | PDF viewer | Готово | pdfjs-dist, multi-page rendering |
 | Block overlay | Готово | SVG: rect, polygon, labels, selection |
 | Block drawing | Готово | DrawingPreview, ResizeHandles, PolygonHandles |
 | Block inspector | Готово | Edit, lock, attempts, prompt override |
-| Editor toolbar | Готово | Actions: OCR, export, block ops |
+| Editor toolbar | Готово | Actions: OCR (Smart/Full), Export (HTML/Markdown dropdown), block ops |
 | Admin overview | Готово | Health cards, queue, workers |
 | Admin sources | Готово | OCR source status, models cache |
 | Admin runs | Готово | List + detail pages |
@@ -107,6 +107,10 @@
 | Prompt management | Готово | Templates list + detail (CRUD) |
 | Zustand stores | Готово | useEditorStore, useAdminStore |
 | SSE integration | Готово | useAdminSSE hook |
+| Documents list page | Готово | Таблица документов, пагинация, навигация в editor |
+| Document upload flow | Готово | Presigned URL → PUT в R2 → finalize → redirect |
+| Workspace hook | Готово | Auto-select первого workspace, localStorage persistence |
+| Export UI | Готово | Dropdown HTML/Markdown в toolbar, blob download |
 | Keyboard shortcuts | Готово | useKeyboardShortcuts hook |
 | Autosave | Готово | useAutosave hook |
 
@@ -160,7 +164,7 @@
 |------|-----------|-------------|
 | OAuth providers (Google, GitHub) | Средний | Сейчас только email/password |
 | Workspace invitation flow UI | Средний | Модель ролей готова, нет UI |
-| Document list: фильтрация, сортировка, поиск | Высокий | Первый кандидат post-MVP |
+| Document list: фильтрация, сортировка, поиск | Средний | Базовый список реализован, нужны фильтры/поиск |
 | Batch document upload | Низкий | Сейчас по одному |
 | PDF annotation preview (overlay) | Средний | Результаты OCR поверх PDF |
 | Export в PDF формат | Низкий | HTML/MD есть |

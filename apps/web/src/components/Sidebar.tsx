@@ -2,7 +2,6 @@ import { Menu } from 'antd'
 import {
   DashboardOutlined,
   FileSearchOutlined,
-  SettingOutlined,
   HeartOutlined,
   MessageOutlined,
   MonitorOutlined,
@@ -36,7 +35,8 @@ export default function Sidebar() {
         { key: '/admin/prompts', icon: <MessageOutlined />, label: 'Prompt Templates' },
       ],
     },
-    { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },
+    // Settings (post-MVP)
+    // { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },
   ]
 
   // Определяем openKeys для подменю

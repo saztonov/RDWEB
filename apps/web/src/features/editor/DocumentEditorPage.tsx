@@ -31,8 +31,6 @@ export default function DocumentEditorPage() {
   // Supabase Realtime: live обновления блоков и recognition progress
   useBlockRealtimeUpdates(id ?? null)
 
-  // TODO: pdfUrl будет устанавливаться из R2 signed URL после реализации upload
-  // Пока для тестирования можно задать вручную через store.setPdfUrl()
   const { pdfDocument, loading: pdfLoading, error: pdfError } = usePdfDocument(pdfUrl)
 
   if (documentLoading) {

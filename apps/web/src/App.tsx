@@ -2,9 +2,11 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ConfigProvider, Spin } from 'antd'
 import ruRU from 'antd/locale/ru_RU'
+import ProtectedRoute from './components/ProtectedRoute'
 import MainLayout from './layouts/MainLayout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import DocumentsListPage from './pages/DocumentsListPage'
 import PromptTemplatesPage from './pages/admin/PromptTemplatesPage'
 import PromptTemplateDetailPage from './pages/admin/PromptTemplateDetailPage'
 import AdminOverviewPage from './pages/admin/AdminOverviewPage'
@@ -24,27 +26,31 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<MainLayout />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            {/* Admin / Ops */}
-            <Route path="admin/overview" element={<AdminOverviewPage />} />
-            <Route path="admin/sources" element={<AdminSourcesPage />} />
-            <Route path="admin/runs" element={<AdminRunsPage />} />
-            <Route path="admin/runs/:id" element={<AdminRunDetailPage />} />
-            <Route path="admin/incidents" element={<AdminIncidentsPage />} />
-            <Route path="admin/logs" element={<AdminEventsPage />} />
-            <Route path="admin/prompts" element={<PromptTemplatesPage />} />
-            <Route path="admin/prompts/:id" element={<PromptTemplateDetailPage />} />
-            {/* Document Editor */}
-            <Route
-              path="documents/:id"
-              element={
-                <Suspense fallback={editorFallback}>
-                  <DocumentEditorPage />
-                </Suspense>
-              }
-            />
+          {/* Все остальные routes требуют авторизации */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/" element={<MainLayout />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="documents" element={<DocumentsListPage />} />
+              {/* Admin / Ops */}
+              <Route path="admin/overview" element={<AdminOverviewPage />} />
+              <Route path="admin/sources" element={<AdminSourcesPage />} />
+              <Route path="admin/runs" element={<AdminRunsPage />} />
+              <Route path="admin/runs/:id" element={<AdminRunDetailPage />} />
+              <Route path="admin/incidents" element={<AdminIncidentsPage />} />
+              <Route path="admin/logs" element={<AdminEventsPage />} />
+              <Route path="admin/prompts" element={<PromptTemplatesPage />} />
+              <Route path="admin/prompts/:id" element={<PromptTemplateDetailPage />} />
+              {/* Document Editor */}
+              <Route
+                path="documents/:id"
+                element={
+                  <Suspense fallback={editorFallback}>
+                    <DocumentEditorPage />
+                  </Suspense>
+                }
+              />
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>

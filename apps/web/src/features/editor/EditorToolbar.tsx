@@ -4,6 +4,7 @@
 
 import {
   BorderOutlined,
+  DownloadOutlined,
   FileTextOutlined,
   MinusOutlined,
   PictureOutlined,
@@ -13,9 +14,10 @@ import {
   StarOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons'
-import { Button, Modal, Segmented, Space, Tag, Tooltip, Typography } from 'antd'
+import { Button, Dropdown, message, Modal, Segmented, Space, Tag, Tooltip, Typography } from 'antd'
 import { useShallow } from 'zustand/shallow'
 
+import { exportDocument } from '../../api/documentsApi'
 import { useEditorStore } from '../../store/useEditorStore'
 import { BlockKind, ShapeType } from '../../types/block'
 import { InteractionState } from '../../types/editor'
@@ -30,6 +32,7 @@ const kindOptions = [
 
 export function EditorToolbar() {
   const {
+    documentId,
     activeBlockKind,
     activeShapeType,
     currentPage,
@@ -42,6 +45,7 @@ export function EditorToolbar() {
     runProgress,
   } = useEditorStore(
     useShallow((s) => ({
+      documentId: s.documentId,
       activeBlockKind: s.activeBlockKind,
       activeShapeType: s.activeShapeType,
       currentPage: s.currentPage,
@@ -62,6 +66,16 @@ export function EditorToolbar() {
   const zoomIn = useEditorStore((s) => s.zoomIn)
   const zoomOut = useEditorStore((s) => s.zoomOut)
   const startRecognition = useEditorStore((s) => s.startRecognition)
+
+  const handleExport = async (format: 'html' | 'markdown') => {
+    if (!documentId) return
+    try {
+      await exportDocument(documentId, format)
+      message.success(`Экспорт ${format.toUpperCase()} скачан`)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'Ошибка экспорта')
+    }
+  }
 
   const handleSmartRerun = () => startRecognition('smart')
   const handleFullRerun = () => {
@@ -145,6 +159,19 @@ export function EditorToolbar() {
           </Tag>
         )}
       </Space>
+
+      {/* Export */}
+      <Dropdown
+        menu={{
+          items: [
+            { key: 'html', label: 'HTML' },
+            { key: 'markdown', label: 'Markdown' },
+          ],
+          onClick: ({ key }) => handleExport(key as 'html' | 'markdown'),
+        }}
+      >
+        <Button icon={<DownloadOutlined />}>Export</Button>
+      </Dropdown>
 
       {/* Правая часть: zoom + статус сохранения */}
       <Space>
