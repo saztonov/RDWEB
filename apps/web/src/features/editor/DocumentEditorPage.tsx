@@ -9,6 +9,7 @@ import { useParams } from 'react-router-dom'
 import { Result, Spin } from 'antd'
 
 import { usePdfDocument } from '../../hooks/usePdfDocument'
+import { useBlockRealtimeUpdates } from '../../hooks/useBlockRealtimeUpdates'
 import { useEditorStore } from '../../store/useEditorStore'
 import { EditorLayout } from './EditorLayout'
 
@@ -26,6 +27,9 @@ export default function DocumentEditorPage() {
       loadDocument(id)
     }
   }, [id, loadDocument])
+
+  // Supabase Realtime: live обновления блоков и recognition progress
+  useBlockRealtimeUpdates(id ?? null)
 
   // TODO: pdfUrl будет устанавливаться из R2 signed URL после реализации upload
   // Пока для тестирования можно задать вручную через store.setPdfUrl()

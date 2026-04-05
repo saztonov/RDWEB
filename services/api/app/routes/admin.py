@@ -1,33 +1,40 @@
-"""Admin endpoints — health, events, manual healthcheck. Доступны только global admin."""
+"""Admin endpoints — overview health, events. Доступны только global admin.
+
+Healthcheck OCR sources перенесён в admin_sources.py.
+"""
 
 from __future__ import annotations
 
+import redis as redis_lib
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query
 
 from contracts import (
     AdminHealthResponse,
-    HealthCheckResponse,
     PaginatedMeta,
+    QueueSummaryResponse,
     ServiceHealthResponse,
     SystemEventListResponse,
     SystemEventResponse,
+    WorkerHeartbeatResponse,
+    WorkerSummaryResponse,
 )
 
 from ..auth import CurrentUser, get_supabase
 from ..auth.dependencies import require_admin
+from ..config import get_settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/health", response_model=AdminHealthResponse)
 def admin_health(user: CurrentUser = Depends(require_admin)) -> AdminHealthResponse:
-    """Health-статус всех сервисов. Только для admin."""
+    """Health-статус всех сервисов + очередь + воркеры. Только для admin."""
     sb = get_supabase()
+    settings = get_settings()
 
-    # Последний health check для каждого сервиса
-    # Supabase не поддерживает DISTINCT ON, берём последние N записей и дедуплицируем
+    # ── Service health checks (дедупликация по service_name) ──
     result = (
         sb.table("service_health_checks")
         .select("*")
@@ -36,7 +43,6 @@ def admin_health(user: CurrentUser = Depends(require_admin)) -> AdminHealthRespo
         .execute()
     )
 
-    # Дедупликация: оставляем только последний check для каждого service_name
     seen: dict[str, dict] = {}
     for row in result.data or []:
         name = row["service_name"]
@@ -48,12 +54,13 @@ def admin_health(user: CurrentUser = Depends(require_admin)) -> AdminHealthRespo
             service_name=row["service_name"],
             status=row["status"],
             response_time_ms=row.get("response_time_ms"),
+            details_json=row.get("details_json"),
             checked_at=row["checked_at"],
         )
         for row in seen.values()
     ]
 
-    # Определить overall status
+    # ── Overall status ──
     statuses = {s.status for s in services}
     if not services:
         overall = "unknown"
@@ -64,24 +71,96 @@ def admin_health(user: CurrentUser = Depends(require_admin)) -> AdminHealthRespo
     else:
         overall = "healthy"
 
-    return AdminHealthResponse(services=services, overall=overall)
+    # ── Queue summary ──
+    queue: QueueSummaryResponse | None = None
+    try:
+        r = redis_lib.from_url(settings.redis_url, socket_connect_timeout=3, decode_responses=True)
+        size = r.llen("celery") or 0
+        r.close()
+        queue = QueueSummaryResponse(size=size, max_capacity=100, can_accept=size < 100)
+    except Exception:
+        queue = QueueSummaryResponse(size=-1, max_capacity=100, can_accept=False)
+
+    # ── Worker summary (heartbeats за последние 90 секунд) ──
+    workers_summary: WorkerSummaryResponse | None = None
+    try:
+        cutoff = datetime.now(timezone.utc)
+        # Берём все heartbeats — фильтрация активных в Python
+        hb_result = (
+            sb.table("worker_heartbeats")
+            .select("*")
+            .order("last_seen_at", desc=True)
+            .limit(50)
+            .execute()
+        )
+        worker_list = []
+        for row in hb_result.data or []:
+            worker_list.append(WorkerHeartbeatResponse(
+                worker_name=row["worker_name"],
+                queue_name=row.get("queue_name"),
+                host=row.get("host"),
+                pid=row.get("pid"),
+                memory_mb=row.get("memory_mb"),
+                active_tasks=row.get("active_tasks", 0),
+                last_seen_at=row["last_seen_at"],
+            ))
+        workers_summary = WorkerSummaryResponse(
+            active_count=len(worker_list),
+            workers=worker_list,
+        )
+    except Exception:
+        workers_summary = WorkerSummaryResponse(active_count=0, workers=[])
+
+    return AdminHealthResponse(
+        services=services,
+        overall=overall,
+        queue=queue,
+        workers=workers_summary,
+    )
 
 
 @router.get("/events", response_model=SystemEventListResponse)
 def admin_events(
     user: CurrentUser = Depends(require_admin),
-    severity: str | None = Query(None, description="Фильтр по severity (info/warning/error/critical)"),
+    severity: str | None = Query(None, description="Фильтр по severity"),
+    source_service: str | None = Query(None, description="Фильтр по source_service"),
+    event_type: str | None = Query(None, description="Фильтр по event_type"),
+    date_from: str | None = Query(None, description="ISO 8601 datetime"),
+    date_to: str | None = Query(None, description="ISO 8601 datetime"),
+    run_id: str | None = Query(None, description="Фильтр по payload_json.run_id"),
+    document_id: str | None = Query(None, description="Фильтр по payload_json.document_id"),
+    block_id: str | None = Query(None, description="Фильтр по payload_json.block_id"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> SystemEventListResponse:
-    """Список system events с пагинацией. Только для admin."""
+    """Список system events с фильтрами. Только для admin."""
     sb = get_supabase()
 
-    # Общее количество
-    query = sb.table("system_events").select("id", count="exact")
+    # Общее количество (без payload фильтров — они применяются пост-фактум)
+    count_query = sb.table("system_events").select("id", count="exact")
     if severity:
-        query = query.eq("severity", severity)
-    count_result = query.execute()
+        count_query = count_query.eq("severity", severity)
+    if source_service:
+        count_query = count_query.eq("source_service", source_service)
+    if event_type:
+        count_query = count_query.eq("event_type", event_type)
+    if date_from:
+        count_query = count_query.gte("created_at", date_from)
+    if date_to:
+        count_query = count_query.lte("created_at", date_to)
+
+    # JSONB фильтры через contains
+    payload_filter: dict = {}
+    if run_id:
+        payload_filter["run_id"] = run_id
+    if document_id:
+        payload_filter["document_id"] = document_id
+    if block_id:
+        payload_filter["block_id"] = block_id
+    if payload_filter:
+        count_query = count_query.contains("payload_json", payload_filter)
+
+    count_result = count_query.execute()
     total = count_result.count or 0
 
     # Данные с пагинацией
@@ -93,6 +172,17 @@ def admin_events(
     )
     if severity:
         query = query.eq("severity", severity)
+    if source_service:
+        query = query.eq("source_service", source_service)
+    if event_type:
+        query = query.eq("event_type", event_type)
+    if date_from:
+        query = query.gte("created_at", date_from)
+    if date_to:
+        query = query.lte("created_at", date_to)
+    if payload_filter:
+        query = query.contains("payload_json", payload_filter)
+
     result = query.execute()
 
     events = [
@@ -110,31 +200,4 @@ def admin_events(
     return SystemEventListResponse(
         events=events,
         meta=PaginatedMeta(total=total, limit=limit, offset=offset),
-    )
-
-
-@router.post("/ocr/sources/{source_id}/healthcheck", response_model=HealthCheckResponse)
-async def trigger_healthcheck(
-    source_id: str,
-    request: Request,
-    user: CurrentUser = Depends(require_admin),
-) -> HealthCheckResponse:
-    """Ручной healthcheck OCR source-а. Только для admin."""
-    from ..services.source_registry import SourceRegistry
-
-    registry: SourceRegistry = request.app.state.source_registry
-
-    if not registry.has_source(source_id):
-        raise HTTPException(status_code=404, detail="OCR source не найден или отключён")
-
-    result = await registry.run_healthcheck(source_id)
-    config = registry.get_config(source_id)
-
-    return HealthCheckResponse(
-        source_id=source_id,
-        source_name=config.name,
-        health_status=result.status.value,
-        response_time_ms=result.response_time_ms,
-        details=result.details,
-        checked_at=datetime.now(timezone.utc),
     )

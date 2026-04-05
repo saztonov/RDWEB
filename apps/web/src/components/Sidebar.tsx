@@ -1,5 +1,16 @@
 import { Menu } from 'antd'
-import { DashboardOutlined, FileSearchOutlined, SettingOutlined, HeartOutlined, MessageOutlined } from '@ant-design/icons'
+import {
+  DashboardOutlined,
+  FileSearchOutlined,
+  SettingOutlined,
+  HeartOutlined,
+  MessageOutlined,
+  MonitorOutlined,
+  CloudServerOutlined,
+  PlayCircleOutlined,
+  WarningOutlined,
+  FileTextOutlined,
+} from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { MenuProps } from 'antd'
 
@@ -17,6 +28,11 @@ export default function Sidebar() {
       icon: <HeartOutlined />,
       label: 'Admin / Ops',
       children: [
+        { key: '/admin/overview', icon: <MonitorOutlined />, label: 'Overview' },
+        { key: '/admin/sources', icon: <CloudServerOutlined />, label: 'OCR Sources' },
+        { key: '/admin/runs', icon: <PlayCircleOutlined />, label: 'Recognition Runs' },
+        { key: '/admin/incidents', icon: <WarningOutlined />, label: 'Incidents' },
+        { key: '/admin/logs', icon: <FileTextOutlined />, label: 'Logs / Events' },
         { key: '/admin/prompts', icon: <MessageOutlined />, label: 'Prompt Templates' },
       ],
     },

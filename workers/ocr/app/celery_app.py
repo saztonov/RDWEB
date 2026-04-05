@@ -55,7 +55,14 @@ celery_app.conf.update(
     task_default_priority=settings.default_task_priority,
     task_queue_max_priority=10,
     # Авто-импорт задач
-    imports=["app.tasks", "app.jobs.model_sync", "app.jobs.health_probe"],
+    imports=[
+        "app.tasks",
+        "app.jobs.model_sync",
+        "app.jobs.health_probe",
+        "app.jobs.infra_probe",
+        "app.jobs.heartbeat",
+        "app.jobs.retention",
+    ],
     # Beat schedule — периодические задачи
     beat_schedule={
         "sync-source-models": {
@@ -65,6 +72,18 @@ celery_app.conf.update(
         "probe-source-health": {
             "task": "ocr.probe_source_health",
             "schedule": 60.0,  # каждую минуту
+        },
+        "probe-infra-health": {
+            "task": "ocr.probe_infra_health",
+            "schedule": 60.0,  # каждую минуту
+        },
+        "worker-heartbeat": {
+            "task": "ocr.worker_heartbeat",
+            "schedule": 30.0,  # каждые 30 секунд
+        },
+        "cleanup-retention": {
+            "task": "ocr.cleanup_retention",
+            "schedule": 86400.0,  # раз в сутки
         },
     },
 )

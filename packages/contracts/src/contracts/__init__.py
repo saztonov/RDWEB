@@ -1,6 +1,23 @@
 """Contracts — shared schemas для API."""
 
-from .admin import AdminHealthResponse, ServiceHealthResponse, SystemEventListResponse, SystemEventResponse
+from .admin import (
+    AdminHealthResponse,
+    AdminOcrSourceDetailResponse,
+    AdminOcrSourceListResponse,
+    AdminOcrSourceResponse,
+    AdminRunBlockResponse,
+    AdminRunDetailResponse,
+    AdminRunListResponse,
+    AdminRunResponse,
+    BlockIncidentListResponse,
+    BlockIncidentResponse,
+    QueueSummaryResponse,
+    ServiceHealthResponse,
+    SystemEventListResponse,
+    SystemEventResponse,
+    WorkerHeartbeatResponse,
+    WorkerSummaryResponse,
+)
 from .auth import MeResponse, UserResponse, WorkspaceMemberInfo
 from .blocks import (
     AcceptAttemptRequest,
@@ -16,6 +33,7 @@ from .blocks import (
     ToggleLockRequest,
 )
 from .common import ErrorResponse, PaginatedMeta
+from .exports import ExportCreateRequest, ExportListResponse, ExportResponse
 from .documents import (
     DocumentDetailResponse,
     DocumentListResponse,
@@ -81,9 +99,21 @@ __all__ = [
     "UploadUrlResponse",
     # admin
     "AdminHealthResponse",
+    "AdminOcrSourceDetailResponse",
+    "AdminOcrSourceListResponse",
+    "AdminOcrSourceResponse",
+    "AdminRunBlockResponse",
+    "AdminRunDetailResponse",
+    "AdminRunListResponse",
+    "AdminRunResponse",
+    "BlockIncidentListResponse",
+    "BlockIncidentResponse",
+    "QueueSummaryResponse",
     "ServiceHealthResponse",
     "SystemEventListResponse",
     "SystemEventResponse",
+    "WorkerHeartbeatResponse",
+    "WorkerSummaryResponse",
     # blocks — manual edit, lock, attempts, recognition
     "AcceptAttemptRequest",
     "BlockDetailResponse",
@@ -117,4 +147,8 @@ __all__ = [
     "OcrSourceModelResponse",
     "OcrSourceModelsListResponse",
     "HealthCheckResponse",
+    # exports
+    "ExportCreateRequest",
+    "ExportListResponse",
+    "ExportResponse",
 ]
